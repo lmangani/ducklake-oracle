@@ -1,0 +1,4 @@
+# Don't commit credentials
+terraform.tfvars
+/data
+.env
