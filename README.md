@@ -198,8 +198,8 @@ Consider restricting Security List rules to your IP address instead of `0.0.0.0/
 
 **Oracle Cloud Free Tier (Always Free):**
 - **Compute:** FREE (VM.Standard.A1.Flex: up to 4 OCPUs, 24 GB RAM)
-- **Boot Volume:** FREE (50 GB)
-- **Block Volume:** FREE (up to 200 GB total)
+- **Block Storage:** FREE (200 GB total, includes boot + data volumes)
+  - Example: 50 GB boot volume + 150 GB data volume = 200 GB total
 - **Object Storage:** FREE (first 10 GB)
 - **Outbound Transfer:** FREE (10 TB/month)
 
@@ -208,6 +208,7 @@ Consider restricting Security List rules to your IP address instead of `0.0.0.0/
 **Beyond Free Tier:**
 - Additional Object Storage: ~$0.026/GB/month
 - Additional Compute: Pay-as-you-go pricing
+- Additional Block Storage (beyond 200 GB): ~$0.0255/GB/month
 
 ## Structure
 

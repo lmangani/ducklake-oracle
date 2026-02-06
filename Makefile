@@ -12,7 +12,8 @@ check-env:
 deploy: check-env
 	@echo "Deploying to $$INSTANCE_IP..."
 	@echo "Waiting for SSH to be available..."
-	@until ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -i "$$SSH_KEY_PATH" $$SSH_USER@$$INSTANCE_IP true 2>/dev/null; do \
+	@echo "IMPORTANT: Please verify the host key fingerprint on first connection"
+	@until ssh -o ConnectTimeout=5 -i "$$SSH_KEY_PATH" $$SSH_USER@$$INSTANCE_IP true 2>/dev/null; do \
 		echo "  SSH not ready, retrying..."; \
 		sleep 5; \
 	done

@@ -47,10 +47,15 @@ def setup_firewall() -> None:
 
 
 def persist_firewall_config() -> None:
+    # Detect OS and install appropriate package
     server.shell(
         name="Install and configure firewall persistence",
         commands=[
-            "sudo dnf install -y iptables-services || sudo apt-get update && sudo apt-get install -y iptables-persistent",
+            # Check if dnf exists (Oracle Linux/RHEL)
+            "command -v dnf >/dev/null && sudo dnf install -y iptables-services || true",
+            # Check if apt-get exists (Debian/Ubuntu)
+            "command -v apt-get >/dev/null && (sudo apt-get update && sudo apt-get install -y iptables-persistent) || true",
+            # Enable and save
             "sudo systemctl enable iptables || true",
             "sudo service iptables save || sudo netfilter-persistent save || true",
         ],

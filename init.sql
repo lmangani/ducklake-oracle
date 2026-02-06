@@ -11,15 +11,15 @@ CREATE OR REPLACE SECRET postgres_secret (
 );
 
 -- DuckLake with local storage (default) or S3 (if configured)
--- Set LOCAL_DATA_PATH in .env for local storage: /mnt/data/ducklake
--- Set S3_DATA_PATH in .env for S3 storage: s3://bucket-name/
+-- Uses LOCAL_DATA_PATH from environment (default: /mnt/data/ducklake)
+-- Or S3_DATA_PATH if you want S3 storage instead
 CREATE SECRET ducklake_secret (
     TYPE ducklake,
     METADATA_PATH '',
-    DATA_PATH COALESCE(getenv('S3_DATA_PATH'), getenv('LOCAL_DATA_PATH'), '/mnt/data/ducklake'),
+    DATA_PATH COALESCE(getenv('S3_DATA_PATH'), getenv('LOCAL_DATA_PATH')),
     METADATA_PARAMETERS MAP {'TYPE': 'postgres', 'SECRET': 'postgres_secret'}
 );
 
 ATTACH 'ducklake:ducklake_secret' AS ducklake;
 USE ducklake;
-SELECT 'DuckLake is ready - using storage at: ' || COALESCE(getenv('S3_DATA_PATH'), getenv('LOCAL_DATA_PATH'), '/mnt/data/ducklake') as status;
+SELECT 'DuckLake is ready - using storage at: ' || COALESCE(getenv('S3_DATA_PATH'), getenv('LOCAL_DATA_PATH')) as status;

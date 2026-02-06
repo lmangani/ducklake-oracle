@@ -46,12 +46,17 @@ def setup_postgres(db_password: str = "changeme"):
         _su_user="postgres",
     )
 
-    # Determine PostgreSQL config path
+    # Determine PostgreSQL config path and configure
     server.shell(
-        name="Configure PostgreSQL to listen on all addresses",
+        name="Detect PostgreSQL config path",
         commands=[
-            "sudo sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = '*'/g\" /var/lib/pgsql/16/data/postgresql.conf || sudo sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = '*'/g\" /etc/postgresql/16/main/postgresql.conf",
-            "echo 'host    ducklake_catalog           ducklake         0.0.0.0/0          md5' | sudo tee -a /var/lib/pgsql/16/data/pg_hba.conf || echo 'host    ducklake_catalog           ducklake         0.0.0.0/0          md5' | sudo tee -a /etc/postgresql/16/main/pg_hba.conf",
+            # Determine which config file exists
+            "PGCONF=$([ -f /var/lib/pgsql/16/data/postgresql.conf ] && echo '/var/lib/pgsql/16/data' || echo '/etc/postgresql/16/main')",
+            # Configure listen addresses
+            "sudo sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = '*'/g\" $PGCONF/postgresql.conf",
+            # Add pg_hba entry
+            "echo 'host    ducklake_catalog           ducklake         0.0.0.0/0          md5' | sudo tee -a $PGCONF/pg_hba.conf",
+            # Restart PostgreSQL
             "sudo systemctl restart postgresql-16 || sudo systemctl restart postgresql",
         ],
     )
