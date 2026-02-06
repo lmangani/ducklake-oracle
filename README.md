@@ -1,335 +1,345 @@
-# DuckLake on Oracle Cloud
+# DuckLake - Simple Local Installation
 
-Deploy [DuckLake](https://ducklake.select/) on your existing Oracle Cloud ARM64 instance.
+A super simple script to install [DuckLake](https://ducklake.select/) with SQLite metadata storage on any Linux instance. Works with local storage by default, with optional S3-compatible object storage support.
 
-**What you get:** PostgreSQL for metadata, local block storage for data, DuckDB as the query engine. Optional Oracle Cloud Object Storage support.
+## What You Get
+
+- **DuckDB** - Modern analytical query engine
+- **SQLite** - Lightweight metadata catalog
+- **Local Storage** - Store data files locally (default)
+- **Optional S3** - Use S3-compatible object storage if needed
+- **Simple Service** - Easy-to-use service script
 
 ## Quick Start
 
-This setup assumes you already have an Oracle Cloud instance provisioned. The scripts will configure DuckDB, PostgreSQL, and storage on your existing instance.
+### Prerequisites
 
-## Prerequisites
+- Linux instance (x86_64 or ARM64/aarch64)
+- Root or sudo access
+- Internet connection for downloading DuckDB
 
-- An existing Oracle Cloud ARM64 instance (VM.Standard.A1.Flex recommended)
-- SSH access to your instance
-- [uv](https://docs.astral.sh/uv/) (Python package manager)
-- [DuckDB](https://duckdb.org/) v1.3.0+ installed locally
-
-## Instance Requirements
-
-Your Oracle Cloud instance should have:
-- **OS:** Oracle Linux 8 or Ubuntu 20.04+ (ARM64)
-- **RAM:** At least 4 GB (12 GB recommended for better performance)
-- **Storage:** Boot volume + optional block volume
-- **Network:** Public IP with ports 22 (SSH) and 5432 (PostgreSQL) open
-
-### Recommended Instance Configuration
-
-Use Oracle Cloud Free Tier:
-- **Shape:** VM.Standard.A1.Flex
-- **OCPUs:** 2-4 (Free tier allows up to 4 total)
-- **Memory:** 12-24 GB (Free tier allows up to 24 GB total)
-- **Boot Volume:** 50 GB
-- **Block Volume:** 50-100 GB (optional, Free tier includes 200 GB total)
-
-## Setup
-
-### 1. Create Your Oracle Cloud Instance
-
-1. Log into [Oracle Cloud Console](https://cloud.oracle.com/)
-2. Navigate to: Compute → Instances → Create Instance
-3. Configure:
-   - **Name:** ducklake-server
-   - **Image:** Oracle Linux 8 (ARM64) or Ubuntu 22.04 (ARM64)
-   - **Shape:** VM.Standard.A1.Flex (2-4 OCPUs, 12-24 GB RAM)
-   - **VCN:** Create new or use existing
-   - **Public IP:** Assign a public IPv4 address
-   - **SSH Keys:** Add your public SSH key
-4. Click "Create"
-5. Note the public IP address once instance is running
-
-### 2. Configure Security List
-
-Ensure your VCN Security List allows:
-- **SSH (22):** From your IP or 0.0.0.0/0
-- **PostgreSQL (5432):** From your IP or 0.0.0.0/0
-
-### 3. Optional: Attach Block Volume
-
-For additional storage:
-1. Navigate to: Block Storage → Block Volumes → Create Block Volume
-2. Configure:
-   - **Name:** ducklake-data
-   - **Size:** 50-100 GB
-   - **Availability Domain:** Same as your instance
-3. Attach to your instance:
-   - Go to your instance → Attached Block Volumes → Attach Block Volume
-   - Select the volume you created
-
-### 4. Configure Environment
+### Installation
 
 ```bash
-cp .env.sample .env
+# Clone repository
+git clone https://github.com/lmangani/ducklake-oracle.git
+cd ducklake-oracle
+
+# Run installation script
+sudo ./install.sh
 ```
 
-Edit `.env` and set:
-```bash
-INSTANCE_IP="<your-instance-public-ip>"
-SSH_KEY_PATH="~/.ssh/id_rsa"
-POSTGRES_DB_PASSWORD="your-secure-password"
-```
+The installer will:
+1. Download and install DuckDB
+2. Ensure SQLite is installed
+3. Create a `ducklake` user and data directory
+4. Initialize SQLite metadata database
+5. Install service script
+6. Create systemd service (if available)
+7. Create configuration file at `/etc/ducklake.conf`
 
-Then source it:
-```bash
-set -a && source .env && set +a
-```
-
-### 5. Deploy
-
-```bash
-make deploy
-```
-
-This will:
-- Install and configure PostgreSQL 16
-- Set up firewall rules
-- Install fail2ban for security
-- Configure the database for DuckLake
-
-If you attached a block volume, set it up:
-```bash
-make setup-storage
-```
-
-### 6. Update Environment
-
-After deployment, set `POSTGRES_HOST` in `.env`:
-```bash
-POSTGRES_HOST="<your-instance-ip>"
-```
-
-Reload environment:
-```bash
-set -a && source .env && set +a
-```
-
-### 7. Connect with DuckDB
+### Custom Installation Options
 
 ```bash
-make duckdb
+# Install with custom data path
+sudo ./install.sh --data-path /mnt/data/ducklake
+
+# Install with custom user
+sudo ./install.sh --user myuser
+
+# Or use environment variables
+sudo DATA_PATH=/custom/path DUCKLAKE_USER=myuser ./install.sh
 ```
 
-You're now connected to your DuckLake. Try it:
+## Using DuckLake
+
+### Start Interactive Session
+
+```bash
+# Start DuckDB session with DuckLake
+ducklake-service start
+
+# Or with systemd
+sudo systemctl start ducklake
+```
+
+Inside the DuckDB session:
 
 ```sql
--- Create a table with local storage
-CREATE TABLE test_data AS
-    SELECT * FROM 'https://duckdb.org/data/flights.csv' LIMIT 1000;
+-- List all tables
+SELECT * FROM list_tables();
 
-SELECT * FROM test_data LIMIT 10;
+-- Show storage configuration
+SELECT * FROM storage_info();
+
+-- Create a table from CSV
+CREATE TABLE users AS 
+  SELECT * FROM read_csv_auto('/path/to/users.csv');
+
+-- Query data
+SELECT * FROM users LIMIT 10;
+
+-- Export to Parquet
+COPY users TO '/var/lib/ducklake/data/users.parquet' (FORMAT PARQUET);
 ```
 
-## Storage Options
+### Check Status
 
-### Local Block Storage (Default)
+```bash
+ducklake-service status
+```
 
-Data is stored on the instance's block volume at `/mnt/data/ducklake`.
+### Run Query from Command Line
+
+```bash
+ducklake-service query "SELECT COUNT(*) FROM metadata.tables;"
+```
+
+## Storage Configuration
+
+### Local Storage (Default)
+
+Data is stored in `/var/lib/ducklake/data` by default.
+
+**Configuration** (`/etc/ducklake.conf`):
+```bash
+STORAGE_TYPE=local
+LOCAL_DATA_PATH=/var/lib/ducklake/data
+```
 
 **Pros:**
 - Simple setup
-- No additional costs
 - Fast access
-- Free tier includes 200 GB total storage
+- No additional costs
+- No network dependency
 
 **Cons:**
+- Limited by local disk space
 - Data tied to instance
-- Need backups for disaster recovery
+- Manual backups needed
 
-### Oracle Cloud Object Storage (Optional)
+### S3-Compatible Object Storage (Optional)
 
-To use S3-compatible Object Storage, uncomment and configure in `.env`:
+To use S3, Oracle Cloud Object Storage, MinIO, or other S3-compatible storage:
 
+**Edit** `/etc/ducklake.conf`:
 ```bash
-# Create Customer Secret Keys in OCI Console → User Settings
-S3_ACCESS_KEY="your-access-key"
-S3_SECRET_KEY="your-secret-key"
-S3_ENDPOINT="namespace.compat.objectstorage.us-ashburn-1.oraclecloud.com"
-S3_REGION="us-ashburn-1"
-S3_BUCKET_NAME="ducklake-data"
-S3_DATA_PATH="s3://$S3_BUCKET_NAME/"
+STORAGE_TYPE=s3
+S3_ENDPOINT=https://s3.amazonaws.com
+S3_REGION=us-east-1
+S3_BUCKET=my-ducklake-bucket
+S3_ACCESS_KEY=your-access-key
+S3_SECRET_KEY=your-secret-key
 S3_USE_SSL=true
 ```
 
-Then create the bucket manually in OCI Console → Object Storage → Create Bucket.
+**Oracle Cloud Object Storage Example:**
+```bash
+STORAGE_TYPE=s3
+S3_ENDPOINT=https://namespace.compat.objectstorage.us-ashburn-1.oraclecloud.com
+S3_REGION=us-ashburn-1
+S3_BUCKET=ducklake-data
+S3_ACCESS_KEY=your-oci-access-key
+S3_SECRET_KEY=your-oci-secret-key
+S3_USE_SSL=true
+```
 
 **Pros:**
 - Decoupled from compute
-- Durable storage (11 9's durability)
+- Durable storage
 - Easy to scale
-- First 10 GB free
+- Share data across instances
 
 **Cons:**
-- Additional cost ($0.026/GB/month after 10 GB)
-- Requires S3 API setup
 - Network latency
+- Additional cost (after free tier)
+- Requires S3 API credentials
 
-## Security
+## Service Management
 
-### Firewall Configuration
-
-The deployment automatically configures:
-- **firewalld** (Oracle Linux) allowing SSH (22) and PostgreSQL (5432)
-- **fail2ban** for SSH brute-force protection
-
-### PostgreSQL Access
-
-By default, PostgreSQL accepts connections from any IP (`0.0.0.0/0`). For production:
-
-1. SSH into your instance
-2. Edit `/var/lib/pgsql/16/data/pg_hba.conf` (or `/etc/postgresql/16/main/pg_hba.conf` for Ubuntu)
-3. Replace `0.0.0.0/0` with your specific IP/CIDR
-4. Restart PostgreSQL: `sudo systemctl restart postgresql-16`
-
-### OCI Security List
-
-Consider restricting Security List rules to your IP address instead of `0.0.0.0/0`.
-
-## Cost
-
-**Oracle Cloud Free Tier (Always Free):**
-- **Compute:** FREE (VM.Standard.A1.Flex: up to 4 OCPUs, 24 GB RAM)
-- **Block Storage:** FREE (200 GB total, includes boot + data volumes)
-  - Example: 50 GB boot volume + 150 GB data volume = 200 GB total
-- **Object Storage:** FREE (first 10 GB)
-- **Outbound Transfer:** FREE (10 TB/month)
-
-**Total:** $0/month for typical small-medium workloads within free tier limits
-
-**Beyond Free Tier:**
-- Additional Object Storage: ~$0.026/GB/month
-- Additional Compute: Pay-as-you-go pricing
-- Additional Block Storage (beyond 200 GB): ~$0.0255/GB/month
-
-## Structure
-
-```
-config/      # PyInfra deployment scripts
-scripts/     # Helper scripts (block storage setup)
-init.sql     # DuckDB initialization script
-Makefile     # Deployment automation
-```
-
-## Common Tasks
-
-### Connect to Instance
+### With systemd
 
 ```bash
-ssh -i ~/.ssh/id_rsa opc@<instance-ip>
+# Enable and start service
+sudo systemctl enable --now ducklake
+
+# Check status
+sudo systemctl status ducklake
+
+# View logs
+sudo journalctl -u ducklake -f
+
+# Stop service
+sudo systemctl stop ducklake
 ```
 
-### Check PostgreSQL Status
+### Manual Management
 
 ```bash
-sudo systemctl status postgresql-16
+# Start interactive session
+ducklake-service start
+
+# Check status
+ducklake-service status
+
+# Run query
+ducklake-service query "SELECT * FROM list_tables();"
 ```
 
-### View PostgreSQL Logs
+## File Locations
 
-```bash
-sudo journalctl -u postgresql-16 -n 50 -f
+- **Configuration**: `/etc/ducklake.conf`
+- **Data Directory**: `/var/lib/ducklake` (default)
+- **Metadata DB**: `/var/lib/ducklake/metadata/ducklake.db`
+- **Local Data**: `/var/lib/ducklake/data`
+- **Service Script**: `/usr/local/bin/ducklake-service`
+- **DuckDB Binary**: `/usr/local/bin/duckdb`
+
+## Examples
+
+### Load CSV Data
+
+```sql
+-- Create table from CSV
+CREATE TABLE sales AS 
+  SELECT * FROM read_csv_auto('sales.csv');
+
+-- Verify
+SELECT COUNT(*) FROM sales;
 ```
 
-### Check Storage Usage
+### Load Parquet Data
 
-```bash
-df -h /mnt/data
+```sql
+-- Read parquet file
+CREATE TABLE events AS 
+  SELECT * FROM read_parquet('events.parquet');
 ```
 
-### Backup PostgreSQL
+### Query Remote Data
 
-```bash
-ssh -i ~/.ssh/id_rsa opc@<instance-ip>
-sudo -u postgres pg_dump ducklake_catalog > backup.sql
+```sql
+-- Query CSV from URL
+SELECT * FROM read_csv_auto('https://example.com/data.csv') LIMIT 10;
+
+-- Query Parquet from S3
+SELECT * FROM read_parquet('s3://my-bucket/data.parquet');
 ```
 
-### Restore PostgreSQL
+### Export Data
+
+```sql
+-- Export to Parquet
+COPY sales TO '/var/lib/ducklake/data/sales.parquet' (FORMAT PARQUET);
+
+-- Export to CSV
+COPY sales TO '/var/lib/ducklake/data/sales.csv' (HEADER, DELIMITER ',');
+```
+
+## Backup and Restore
+
+### Backup Metadata
 
 ```bash
-scp backup.sql opc@<instance-ip>:/tmp/
-ssh -i ~/.ssh/id_rsa opc@<instance-ip>
-sudo -u postgres psql ducklake_catalog < /tmp/backup.sql
+# Backup SQLite database
+sudo cp /var/lib/ducklake/metadata/ducklake.db /backup/ducklake.db.backup
+
+# Or use SQLite backup
+sudo sqlite3 /var/lib/ducklake/metadata/ducklake.db ".backup /backup/ducklake.db"
+```
+
+### Restore Metadata
+
+```bash
+# Restore from backup
+sudo cp /backup/ducklake.db.backup /var/lib/ducklake/metadata/ducklake.db
+sudo chown ducklake:ducklake /var/lib/ducklake/metadata/ducklake.db
+```
+
+### Backup Data
+
+**Local storage:**
+```bash
+# Backup entire data directory
+sudo tar czf /backup/ducklake-data.tar.gz /var/lib/ducklake/data
+```
+
+**S3 storage:**
+Data is already in S3, just ensure bucket versioning/backup is enabled.
+
+## Uninstall
+
+```bash
+# Stop service
+sudo systemctl stop ducklake
+sudo systemctl disable ducklake
+
+# Remove files
+sudo rm -f /usr/local/bin/ducklake-service
+sudo rm -f /usr/local/bin/duckdb
+sudo rm -f /etc/ducklake.conf
+sudo rm -f /etc/systemd/system/ducklake.service
+
+# Remove data (WARNING: This deletes all data!)
+sudo rm -rf /var/lib/ducklake
+
+# Remove user
+sudo userdel ducklake
 ```
 
 ## Troubleshooting
 
-### SSH Connection Issues
+### DuckDB not found
 
 ```bash
-# Verify instance is running in OCI Console
-# Check Security List allows SSH from your IP
-# Test connection
-ssh -v -i ~/.ssh/id_rsa opc@<instance-ip>
+# Check if DuckDB is installed
+which duckdb
+
+# Verify it's executable
+ls -l /usr/local/bin/duckdb
+
+# Check version
+duckdb --version
 ```
 
-### PostgreSQL Connection Refused
+### Permission denied
 
 ```bash
-# Check PostgreSQL is running
-ssh -i ~/.ssh/id_rsa opc@<instance-ip>
-sudo systemctl status postgresql-16
-
-# Check it's listening
-sudo netstat -tlnp | grep 5432
-
-# Verify firewall
-sudo firewall-cmd --list-all
+# Ensure proper permissions
+sudo chown -R ducklake:ducklake /var/lib/ducklake
+sudo chmod 755 /var/lib/ducklake
 ```
 
-### Deployment Fails
+### SQLite database locked
 
 ```bash
-# Check Python/uv installation
-uv --version
+# Check for processes using the database
+sudo lsof /var/lib/ducklake/metadata/ducklake.db
 
-# Run with verbose output
-cd config && pyinfra inventory.py deploy.py --key "$SSH_KEY_PATH" --user opc --sudo -vv
+# Kill if necessary
+sudo pkill -u ducklake duckdb
 ```
 
-### Block Volume Not Detected
+### S3 connection errors
 
 ```bash
-# SSH into instance and check for block devices
-ssh -i ~/.ssh/id_rsa opc@<instance-ip>
-lsblk
+# Test S3 credentials with AWS CLI
+aws s3 ls s3://your-bucket --endpoint-url https://your-endpoint
 
-# If you see sdb or similar, run setup script
-# From your local machine:
-make setup-storage
+# Check DuckDB S3 settings
+ducklake-service query "SELECT current_setting('s3_endpoint');"
 ```
-
-## Performance Tips
-
-1. **Use ARM-optimized PostgreSQL** (automatically installed)
-2. **Allocate more OCPUs** if queries are slow (up to 4 in free tier)
-3. **Use Parquet files** for better compression and query performance
-4. **Partition large tables** by date or other columns
-5. **Monitor with:** `top`, `htop`, `iostat -x 2`
 
 ## Resources
 
+- [DuckDB Documentation](https://duckdb.org/docs/)
 - [DuckLake Documentation](https://ducklake.select/)
-- [DuckDB PostgreSQL Extension](https://duckdb.org/docs/extensions/postgres.html)
-- [Oracle Cloud Free Tier](https://www.oracle.com/cloud/free/)
-- [Oracle Cloud Documentation](https://docs.oracle.com/iaas/)
+- [SQLite Documentation](https://www.sqlite.org/docs.html)
 
-## Examples
+## License
 
-See [EXAMPLES.md](EXAMPLES.md) for comprehensive DuckDB query examples.
+MIT
 
 ## Support
 
-For issues:
-1. Check troubleshooting section above
-2. Review deployment logs
-3. Check Oracle Cloud instance console logs
-4. Open an issue in the repository
+For issues, please open an issue on GitHub.
