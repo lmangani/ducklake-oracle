@@ -58,9 +58,11 @@ show_status() {
     
     if [ -f "$METADATA_DB" ]; then
         log_info "Metadata database exists: YES"
-        local size=$(du -sh "$METADATA_DB" 2>/dev/null | awk '{print $1}')
+        local size
+        size=$(du -sh "$METADATA_DB" 2>/dev/null | awk '{print $1}')
         log_info "  Size: $size"
-        local tables=$(sqlite3 "$METADATA_DB" "SELECT COUNT(*) FROM tables;" 2>/dev/null || echo "0")
+        local tables
+        tables=$(sqlite3 "$METADATA_DB" "SELECT COUNT(*) FROM tables;" 2>/dev/null || echo "0")
         log_info "  Tables: $tables"
     else
         log_warn "Metadata database does not exist"

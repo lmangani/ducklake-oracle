@@ -2,6 +2,8 @@
 
 A super simple script to install [DuckLake](https://ducklake.select/) with SQLite metadata storage on any Linux instance. Works with local storage by default, with optional S3-compatible object storage support.
 
+> **Note:** The repository name "ducklake-oracle" is historical. This installation works on **any Linux distribution** (Ubuntu, Debian, RHEL, Oracle Linux, etc.), not just Oracle Cloud.
+
 ## What You Get
 
 - **DuckDB** - Modern analytical query engine
