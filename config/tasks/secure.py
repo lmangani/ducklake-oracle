@@ -2,6 +2,20 @@ from pyinfra.operations import server, iptables, apt
 
 
 def setup_firewall() -> None:
+    # Oracle Linux uses firewalld by default, but we can use iptables for compatibility
+    # Or use firewalld commands
+    server.shell(
+        name="Configure firewalld for Oracle Linux",
+        commands=[
+            "sudo systemctl enable firewalld || true",
+            "sudo systemctl start firewalld || true",
+            "sudo firewall-cmd --permanent --add-service=ssh || true",
+            "sudo firewall-cmd --permanent --add-port=5432/tcp || true",
+            "sudo firewall-cmd --reload || true",
+        ],
+    )
+    
+    # Fallback to iptables if firewalld is not available
     iptables.rule(
         name="Allow loopback input",
         chain="INPUT",
@@ -31,21 +45,13 @@ def setup_firewall() -> None:
         destination_port=22,
     )
 
-    # Set default policies (must run after allowing SSH, else SSH will be blocked)
-    iptables.chain(chain="INPUT", policy="DROP")
-    iptables.chain(chain="FORWARD", policy="DROP")
-    iptables.chain(chain="OUTPUT", policy="ACCEPT")
-
 
 def persist_firewall_config() -> None:
-    apt.update(cache_time=3600)
-
-    apt.packages(
-        packages=["iptables-persistent"],
-        present=True,
-    )
-
     server.shell(
-        name="Save iptables rules",
-        commands=["netfilter-persistent save"],
+        name="Install and configure firewall persistence",
+        commands=[
+            "sudo dnf install -y iptables-services || sudo apt-get update && sudo apt-get install -y iptables-persistent",
+            "sudo systemctl enable iptables || true",
+            "sudo service iptables save || sudo netfilter-persistent save || true",
+        ],
     )

@@ -1,4 +1,4 @@
 output "ducklake_postgres_ip" {
-  value = hcloud_server.ducklake-postgres.ipv4_address
+  value       = oci_core_instance.ducklake_postgres.public_ip
   description = "DuckLake PostgreSQL server IP"
 }
