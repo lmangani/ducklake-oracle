@@ -33,21 +33,14 @@ This configuration uses:
 - **1 Block Volume:** 50 GB for data storage
 - **Object Storage:** S3-compatible bucket for DuckLake data
 
-## Prerequisites
-
-- [OpenTofu](https://opentofu.org/) (Terraform fork)
-- [uv](https://docs.astral.sh/uv/) (Python package manager)
-- [DuckDB](https://duckdb.org/) v1.3.0+
-- A [Hetzner Cloud](https://www.hetzner.com/cloud/) account with:
-  - An API token (Cloud Console → Security → API Tokens)
-  - Object Storage access keys (Cloud Console → Object Storage → Manage keys)
-
 ## Structure
 
 ```
 terraform/   # Terraform infrastructure (ARM64 compute instance + Object Storage bucket)
 config/      # PyInfra server provisioning (PostgreSQL, firewall)
 init.sql     # DuckDB initialization script
+Makefile     # Deployment automation
+```
 Makefile     # Deployment automation
 ```
 
@@ -208,3 +201,138 @@ Example for us-ashburn-1 region:
 ```
 mynamespace.compat.objectstorage.us-ashburn-1.oraclecloud.com
 ```
+
+## Troubleshooting
+
+### Terraform Issues
+
+**Error: "Service error: NotAuthorizedOrNotFound"**
+- Verify your OCI credentials in `.env` are correct
+- Ensure your user has the necessary permissions in the compartment
+- Check that the compartment OCID is correct
+
+**Error: "Out of capacity for shape VM.Standard.A1.Flex"**
+- ARM instances can be in high demand. Try:
+  - Different availability domains (modify `oci_compute.tf`)
+  - Different regions (change `TF_VAR_oci_region`)
+  - Try again later or use a different region
+
+**Error: "API key authentication failed"**
+- Verify fingerprint matches the key added to your OCI user
+- Check that `~/.oci/oci_api_key.pem` exists and has correct permissions (600)
+- Ensure the public key is uploaded to Console → User Settings → API Keys
+
+### Deployment Issues
+
+**SSH connection fails after terraform-apply**
+- Wait 2-3 minutes for instance to fully boot
+- Verify security list allows SSH (port 22) from your IP
+- Check instance public IP: `cd terraform && terraform output`
+- Try manually: `ssh -i ~/.ssh/id_rsa opc@<instance_ip>`
+
+**PostgreSQL installation fails**
+- Check PyInfra output for specific errors
+- SSH into instance and check logs: `sudo journalctl -u postgresql-16`
+- Verify Oracle Linux package repositories are accessible
+
+**Permission denied errors during deployment**
+- Ensure you're using `--sudo` flag in Makefile deploy command
+- Default user is `opc` (not `root`) for Oracle Linux images
+
+### DuckDB Connection Issues
+
+**"Connection refused" to PostgreSQL**
+- Verify `POSTGRES_HOST` in `.env` is set to correct IP
+- Check PostgreSQL is running: `sudo systemctl status postgresql-16`
+- Verify firewall allows port 5432: `sudo firewall-cmd --list-ports`
+- Test connection: `psql -h <ip> -U ducklake -d ducklake_catalog`
+
+**S3 credentials not working**
+- Verify Customer Secret Keys are correct (generated in OCI Console)
+- Check S3_ENDPOINT format: `<namespace>.compat.objectstorage.<region>.oraclecloud.com`
+- Ensure bucket exists: Check OCI Console → Object Storage → Buckets
+- Test S3 access with AWS CLI:
+  ```bash
+  aws s3 ls s3://<bucket> --endpoint-url https://<endpoint>
+  ```
+
+### Resource Cleanup
+
+To completely remove all resources:
+
+```bash
+make destroy
+```
+
+If destroy fails, manually delete from OCI Console:
+1. Compute → Instances → Terminate instance
+2. Compute → Block Volumes → Terminate volume
+3. Networking → Virtual Cloud Networks → Delete VCN
+4. Object Storage → Buckets → Delete bucket
+
+## Examples
+
+### Loading Data from S3
+
+```sql
+-- Load CSV from S3
+CREATE TABLE my_data AS
+    SELECT * FROM read_csv_auto('s3://ducklake-bucket/data.csv');
+
+-- Load Parquet from S3
+CREATE TABLE parquet_data AS
+    SELECT * FROM read_parquet('s3://ducklake-bucket/*.parquet');
+
+-- Query directly without creating table
+SELECT COUNT(*) FROM 's3://ducklake-bucket/data.parquet';
+```
+
+### Working with DuckLake
+
+```sql
+-- Create a table with DuckLake (metadata in PostgreSQL, data in S3)
+CREATE TABLE sales (
+    id INTEGER,
+    product VARCHAR,
+    amount DECIMAL(10,2),
+    sale_date DATE
+);
+
+-- Insert data
+INSERT INTO sales VALUES
+    (1, 'Widget', 29.99, '2024-01-15'),
+    (2, 'Gadget', 49.99, '2024-01-16');
+
+-- Query the data
+SELECT product, SUM(amount) as total
+FROM sales
+GROUP BY product;
+
+-- Data is stored in S3, metadata in PostgreSQL
+SHOW TABLES;
+```
+
+### Backup and Restore
+
+```bash
+# Backup PostgreSQL metadata
+ssh -i ~/.ssh/id_rsa opc@<instance_ip>
+sudo -u postgres pg_dump ducklake_catalog > backup.sql
+
+# Restore
+sudo -u postgres psql ducklake_catalog < backup.sql
+```
+
+## Performance Tips
+
+1. **Use Parquet format** for better compression and query performance
+2. **Partition large tables** by date or other columns
+3. **Use ARM-optimized binaries** (already configured)
+4. **Scale compute** by adjusting OCPUs in `terraform/oci_compute.tf`:
+   ```hcl
+   shape_config {
+     ocpus         = 4  # Increase for better performance
+     memory_in_gbs = 24
+   }
+   ```
+5. **Monitor costs** via OCI Console → Billing & Cost Management
