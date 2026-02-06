@@ -1,4 +1,4 @@
-from pyinfra.operations import apt, iptables
+from pyinfra.operations import apt, iptables, server
 from os import getenv
 from tasks.postgres import setup_postgres
 from tasks.secure import setup_firewall, persist_firewall_config
@@ -14,6 +14,9 @@ def deploy():
         )
     setup_firewall()
     persist_firewall_config()
-    apt.packages(name="Install fail2ban for SSH", packages=["fail2ban"])
+    server.shell(
+        name="Install fail2ban for SSH protection",
+        commands=["sudo dnf install -y fail2ban || sudo apt-get install -y fail2ban"],
+    )
 
 deploy()

@@ -1,10 +1,32 @@
 from pyinfra.operations import server, apt, postgres, files
 
 def setup_postgres(db_password: str = "changeme"):
-    apt.update(name="Update packages", cache_time=3600)
-    apt.upgrade(name="Upgrade packages")
+    # For Oracle Linux, we need to use dnf instead of apt
+    # Check if we're on Oracle Linux or Ubuntu
+    server.shell(
+        name="Install PostgreSQL repository for Oracle Linux",
+        commands=[
+            "sudo dnf install -y oracle-epel-release-el8 || true",
+            "sudo dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-aarch64/pgdg-redhat-repo-latest.noarch.rpm || true",
+            "sudo dnf -qy module disable postgresql || true",
+        ],
+    )
 
-    apt.packages(name="Install PostgreSQL", packages=["postgresql"])
+    server.shell(
+        name="Install PostgreSQL on Oracle Linux",
+        commands=[
+            "sudo dnf install -y postgresql16-server postgresql16 || sudo apt-get update && sudo apt-get install -y postgresql",
+        ],
+    )
+
+    server.shell(
+        name="Initialize PostgreSQL database",
+        commands=[
+            "sudo /usr/pgsql-16/bin/postgresql-16-setup initdb || true",
+            "sudo systemctl enable postgresql-16 || sudo systemctl enable postgresql",
+            "sudo systemctl start postgresql-16 || sudo systemctl start postgresql",
+        ],
+    )
 
     # Configure locale (needed for PostgreSQL)
     server.locale(
@@ -24,18 +46,17 @@ def setup_postgres(db_password: str = "changeme"):
         _su_user="postgres",
     )
 
-    files.line(
-        name="Allow all addresses (postgresql.conf) (insecure, see README)",
-        path="/etc/postgresql/16/main/postgresql.conf",
-        line="listen_addresses = '*'",
-        backup=True,
-        ensure_newline=True
-    )
-
-    files.line(
-        name="Allow all addresses (pg_hba.conf) (insecure, see README)",
-        path="/etc/postgresql/16/main/pg_hba.conf",
-        line="host    ducklake_catalog           ducklake         0.0.0.0/0          md5",
-        ensure_newline=True,
-        backup=True
+    # Determine PostgreSQL config path and configure
+    server.shell(
+        name="Detect PostgreSQL config path",
+        commands=[
+            # Determine which config file exists
+            "PGCONF=$([ -f /var/lib/pgsql/16/data/postgresql.conf ] && echo '/var/lib/pgsql/16/data' || echo '/etc/postgresql/16/main')",
+            # Configure listen addresses
+            "sudo sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = '*'/g\" $PGCONF/postgresql.conf",
+            # Add pg_hba entry
+            "echo 'host    ducklake_catalog           ducklake         0.0.0.0/0          md5' | sudo tee -a $PGCONF/pg_hba.conf",
+            # Restart PostgreSQL
+            "sudo systemctl restart postgresql-16 || sudo systemctl restart postgresql",
+        ],
     )
